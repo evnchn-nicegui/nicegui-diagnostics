@@ -1,0 +1,9 @@
+services:
+  nicegui-diagnostics:
+    build: .
+    container_name: nicegui-diagnostics-demo
+    ports:
+      - "8085:8081"
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
