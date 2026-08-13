@@ -5,8 +5,8 @@ displays its own diagnostic data. Run with: python demo/main.py
 """
 from __future__ import annotations
 
-import json
-from nicegui import ui, app
+from nicegui import ui
+
 import nicegui_diagnostics
 
 
@@ -46,7 +46,7 @@ def main() -> None:
     ui.dark_mode(True)
 
     # --- Hero section ---
-    with ui.element('div').classes('hero w-full py-12 px-8'):
+    with ui.element('div').classes('hero w-full py-12 px-8'):  # noqa: SIM117 — nested with is intentional in NiceGUI
         with ui.row().classes('w-full max-w-6xl mx-auto items-center gap-8'):
             with ui.column().classes('flex-1'):
                 ui.label('nicegui-diagnostics').classes('text-4xl font-bold text-white')

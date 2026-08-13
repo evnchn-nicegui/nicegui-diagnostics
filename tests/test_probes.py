@@ -38,7 +38,7 @@ def test_lag_collect():
 
 def test_tasks_install_uninstall():
     """Task probe install/uninstall should not crash."""
-    from nicegui_diagnostics.probes.tasks import install, uninstall, collect
+    from nicegui_diagnostics.probes.tasks import collect, install, uninstall
     install()
     result = collect()
     assert "asyncio_tasks" in result
@@ -47,7 +47,7 @@ def test_tasks_install_uninstall():
 
 def test_clients_verbose():
     """Clients probe with verbose should return by_id detail."""
-    from nicegui_diagnostics.probes.clients import configure, collect
+    from nicegui_diagnostics.probes.clients import collect, configure
     configure(verbose=True)
     result = collect()
     assert "clients" in result
@@ -56,7 +56,7 @@ def test_clients_verbose():
 
 def test_stack_dump_clean_uninstall():
     """Stack dump uninstall should fully clean up."""
-    from nicegui_diagnostics.probes.stack_dump import install, uninstall, collect
+    from nicegui_diagnostics.probes.stack_dump import collect, install, uninstall
     install(port=0)
     assert collect()["stack_dump_enabled"] is True
     uninstall()

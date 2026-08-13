@@ -6,10 +6,10 @@ When RSS exceeds memory_restart_threshold_mb, triggers ordered shutdown:
 """
 from __future__ import annotations
 
+import os
 import platform
 import resource
-import sys
-from typing import Callable
+from collections.abc import Callable
 
 _threshold_mb: float | None = None
 _hooks: list[Callable] = []
@@ -45,13 +45,30 @@ def uninstall() -> None:
 
 
 def get_current_rss_mb() -> float:
-    """Get current RSS in MB using resource.getrusage."""
+    """Get current RSS in MB.
+
+    Linux: reads /proc/self/statm (resident pages) — true current RSS.
+    macOS: uses ru_maxrss which reports current (not peak) RSS on Darwin.
+    """
+    if platform.system() == "Linux":
+        try:
+            with open("/proc/self/statm") as f:
+                fields = f.read().split()
+            # Field 1 (0-indexed) = resident pages
+            resident_pages = int(fields[1])
+            rss_bytes = resident_pages * os.sysconf("SC_PAGE_SIZE")
+            return rss_bytes / (1024 * 1024)
+        except (OSError, ValueError, IndexError):
+            pass  # fall through to ru_maxrss
+
+    # macOS (and Linux fallback): ru_maxrss
     usage = resource.getrusage(resource.RUSAGE_SELF)
-    # macOS: ru_maxrss is bytes. Linux: ru_maxrss is KB.
     rss_raw = usage.ru_maxrss
     if platform.system() == "Linux":
+        # Linux: ru_maxrss is in KB (but this is peak, only used as fallback)
         rss_bytes = rss_raw * 1024
     else:
+        # macOS: ru_maxrss is in bytes and reports current RSS
         rss_bytes = rss_raw
     return rss_bytes / (1024 * 1024)
 

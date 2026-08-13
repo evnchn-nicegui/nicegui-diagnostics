@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 

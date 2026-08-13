@@ -22,26 +22,37 @@ class DiagnosticsView(Element):
         scope: Literal["client", "global"] = "client",
         mode: Literal["append", "replace"] = "append",
         interval: float | None = None,
+        max_lines: int = 200,
     ) -> None:
         """
         :param scope: 'client' for per-client detail, 'global' for server-wide
         :param mode: 'append' preserves history, 'replace' clears before refresh
         :param interval: auto-refresh interval in seconds; None disables
+        :param max_lines: maximum log lines retained (prevents unbounded DOM growth)
         """
         super().__init__()
         self._scope = scope
         self._mode = mode
 
         with self:
-            self._log = ui.log().classes("w-full")
+            self._log = ui.log(max_lines=max_lines).classes("w-full")
             ui.button("Refresh", on_click=self.refresh)
             if interval is not None:
                 ui.timer(interval, self.refresh)
 
+    def _resolve_client_id(self) -> str | None:
+        """Return the active client ID when scope is 'client', else None."""
+        if self._scope == "global":
+            return None
+        try:
+            return ui.context.client.id  # type: ignore[attr-defined]
+        except (RuntimeError, AttributeError):
+            return None
+
     def refresh(self) -> None:
         """Fetch and display a diagnostics snapshot."""
         snapshot = collect_snapshot(
-            client_id=None,  # global scope for now
+            client_id=self._resolve_client_id(),
         )
 
         if self._mode == "replace":
@@ -68,12 +79,10 @@ class DiagnosticsView(Element):
 
 def install() -> None:
     """No-op — the element is available on import."""
-    pass
 
 
 def uninstall() -> None:
     """No-op."""
-    pass
 
 
 def collect() -> dict:

@@ -16,6 +16,8 @@ _installed: bool = False
 
 
 def _on_connect() -> None:
+    if not _installed:
+        return
     try:
         from nicegui import ui
         client_id = ui.context.client.id
@@ -25,6 +27,8 @@ def _on_connect() -> None:
 
 
 def _on_disconnect() -> None:
+    if not _installed:
+        return
     try:
         from nicegui import ui
         client_id = ui.context.client.id
@@ -48,7 +52,9 @@ def install(*, ttl_s: float = 60.0) -> None:
 
 
 def uninstall() -> None:
-    global _installed, _last_alive
+    global _installed
+    # Setting _installed = False makes the callbacks no-ops even though
+    # NiceGUI still holds references to them (gate-flag pattern).
     _installed = False
     _last_alive.clear()
 
@@ -64,8 +70,8 @@ def purge_stale() -> int:
 
 def collect() -> dict:
     return {
-        "heartbeat": {
-            "alive_clients": len(_last_alive),
-            "client_ids": list(_last_alive.keys()),
-        }
+        'heartbeat': {
+            'alive_clients': len(_last_alive),
+            'client_ids': list(_last_alive.keys()),
+        },
     }

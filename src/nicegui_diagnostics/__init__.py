@@ -1,15 +1,19 @@
 """nicegui-diagnostics — runtime introspection for NiceGUI applications."""
 from __future__ import annotations
 
+import asyncio
 import importlib
 import logging
+from collections.abc import Callable
 from datetime import datetime, timezone
 from types import ModuleType
-from typing import Any, Callable
+from typing import Any
 
-from nicegui_diagnostics import _bus
-
-__version__ = '0.1.0.dev0'
+try:
+    from importlib.metadata import version as _get_version
+    __version__ = _get_version(__name__)
+except Exception:
+    __version__ = '0.1.0.dev0'
 
 _log = logging.getLogger(__name__)
 
@@ -36,6 +40,7 @@ _FEATURE_PROBES: dict[str, str] = {
 # install() is called with features=None so we don't try to import stubs.
 _IMPLEMENTED_FEATURES: frozenset[str] = frozenset({
     'tasks', 'memory', 'clients', 'config', 'event_loop_lag', 'stack_dump', 'delta',
+    'lifecycle', 'eio', 'js_rtt', 'heartbeat',
 })
 
 # Stored kwargs for use by probes / dashboard
@@ -44,6 +49,94 @@ _memory_restart_threshold_mb: float | None = None
 _auth: Any = None
 _stack_dump_port: int = 9999
 _on_before_restart: Callable[[], None] | None = None
+
+# Scheduler state
+_scheduler_task: asyncio.Task[None] | None = None
+_scheduler_interval_s: float = 5.0
+
+
+async def _scheduler_tick() -> None:
+    """Run one round of periodic probe measurements.
+
+    Called by the background scheduler task every ``_scheduler_interval_s`` seconds.
+    Each probe's async ``measure()`` / ``purge_stale()`` / ``check_and_restart()``
+    is awaited here so the cached values returned by ``collect()`` stay fresh.
+    """
+    # Event-loop lag probe
+    if 'event_loop_lag' in _probe_modules:
+        try:
+            await _probe_modules['event_loop_lag'].measure()
+        except Exception:
+            _log.debug('event_loop_lag measure() failed', exc_info=True)
+
+    # WebSocket RTT probe
+    if 'js_rtt' in _probe_modules:
+        try:
+            await _probe_modules['js_rtt'].measure()
+        except Exception:
+            _log.debug('ws_rtt measure() failed', exc_info=True)
+
+    # Heartbeat stale-client purge
+    if 'heartbeat' in _probe_modules:
+        try:
+            _probe_modules['heartbeat'].purge_stale()
+        except Exception:
+            _log.debug('heartbeat purge_stale() failed', exc_info=True)
+
+    # Memory-threshold restart check
+    if _memory_restart_threshold_mb is not None:
+        try:
+            from nicegui_diagnostics.restart import check_and_restart
+            check_and_restart()
+        except SystemExit:
+            raise
+        except Exception:
+            _log.debug('restart check_and_restart() failed', exc_info=True)
+
+
+async def _scheduler_loop() -> None:
+    """Background task that calls ``_scheduler_tick`` at a fixed interval."""
+    while _installed:
+        try:
+            await asyncio.sleep(_scheduler_interval_s)
+        except asyncio.CancelledError:
+            return
+        if not _installed:
+            return
+        try:
+            await _scheduler_tick()
+        except SystemExit:
+            raise
+        except Exception:
+            _log.warning('Scheduler tick failed', exc_info=True)
+
+
+def _start_scheduler() -> None:
+    """Start the background scheduler task if an event loop is running.
+
+    If called outside an event loop (e.g. at module-import time), the
+    scheduler is deferred — ``install()`` was called too early and the
+    loop will start it later when NiceGUI boots.
+    """
+    global _scheduler_task
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        _log.debug('No running event loop at install() — scheduler deferred')
+        return
+
+    if _scheduler_task is not None and not _scheduler_task.done():
+        return  # already running
+
+    _scheduler_task = loop.create_task(_scheduler_loop(), name='nicegui-diagnostics-scheduler')
+
+
+def _stop_scheduler() -> None:
+    """Cancel the background scheduler task and wait for it to finish."""
+    global _scheduler_task
+    if _scheduler_task is not None and not _scheduler_task.done():
+        _scheduler_task.cancel()
+    _scheduler_task = None
 
 
 def install(
@@ -89,7 +182,7 @@ def install(
         _api_module.install(auth_fn=auth)
 
         # Register the diagnostics route on NiceGUI's Starlette app so it
-        # actually serves HTTP requests (HIGH #1 fix).
+        # actually serves HTTP requests.
         from nicegui import app as nicegui_app
 
         route = _api_module.get_route()
@@ -101,6 +194,7 @@ def install(
     # --- Register ui.diagnostics_view() on NiceGUI's ui namespace ---
     try:
         from nicegui import ui as nicegui_ui
+
         from nicegui_diagnostics.elements.diagnostics_view import DiagnosticsView
 
         nicegui_ui.diagnostics_view = DiagnosticsView
@@ -148,12 +242,18 @@ def install(
         for name, fn in extra_collectors.items():
             _collectors[name] = fn
 
+    # --- Start the background scheduler for periodic probe measurements ---
+    _start_scheduler()
+
 
 def uninstall() -> None:
     """Uninstall the diagnostics framework and clean up all state."""
     global _installed, _collectors, _enabled_features, _probe_modules
     global _structlog_interval_s, _memory_restart_threshold_mb
     global _auth, _stack_dump_port, _on_before_restart
+
+    # Stop the background scheduler first so no more probe calls happen
+    _stop_scheduler()
 
     # Tear down probe modules
     for feature, mod in _probe_modules.items():
@@ -165,10 +265,10 @@ def uninstall() -> None:
 
     # Tear down API endpoint
     try:
-        from nicegui_diagnostics import api as _api_module
-
-        # Remove the diagnostics route from NiceGUI's Starlette app (HIGH #1 fix).
+        # Remove the diagnostics route from NiceGUI's Starlette app.
         from nicegui import app as nicegui_app
+
+        from nicegui_diagnostics import api as _api_module
 
         route = _api_module.get_route()
         if route is not None and route in nicegui_app.routes:
@@ -204,7 +304,6 @@ def uninstall() -> None:
     _auth = None
     _stack_dump_port = 9999
     _on_before_restart = None
-    _bus.reset()
 
 
 def collect_snapshot(*, client_id: str | None = None, verbose: bool = False) -> dict[str, Any]:
@@ -217,8 +316,7 @@ def collect_snapshot(*, client_id: str | None = None, verbose: bool = False) -> 
     Returns:
         A dictionary containing the merged snapshot data.
     """
-    # Forward client_id/verbose to the clients probe so it can scope its
-    # output (HIGH #3 fix).
+    # Forward client_id/verbose to the clients probe so it can scope its output.
     if 'clients' in _probe_modules:
         from .probes import clients as _clients_probe
 
@@ -234,9 +332,8 @@ def collect_snapshot(*, client_id: str | None = None, verbose: bool = False) -> 
                 data = mod.collect()
                 if isinstance(data, dict):
                     # Merge probe keys directly into the snapshot instead of
-                    # nesting under the feature name (HIGH #2 fix).  Probes
-                    # already return their own top-level key, e.g.
-                    # {"memory": {"peak_rss_bytes": ...}}.
+                    # nesting under the feature name.  Probes already return
+                    # their own top-level key, e.g. {"memory": {"peak_rss_bytes": ...}}.
                     result.update(data)
             except Exception:
                 _log.warning('Probe %s collect() failed', feature, exc_info=True)
@@ -257,4 +354,4 @@ def register_collector(name: str, callable: Callable[[], dict[str, Any]]) -> Non
     _collectors[name] = callable
 
 
-__all__ = ['install', 'uninstall', 'collect_snapshot', 'register_collector', '__version__']
+__all__ = ['__version__', 'collect_snapshot', 'install', 'register_collector', 'uninstall']

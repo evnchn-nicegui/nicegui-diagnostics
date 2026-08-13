@@ -6,9 +6,7 @@ server-side event_loop_lag misses.
 """
 from __future__ import annotations
 
-import asyncio
 import time
-from typing import Any
 
 _last_rtt_ms: float = 0.0
 
@@ -22,7 +20,7 @@ async def measure() -> float:
     try:
         from nicegui import ui
         t0 = time.monotonic()
-        result = await ui.run_javascript("1+1", timeout=5.0)
+        await ui.run_javascript("1+1", timeout=5.0)
         t1 = time.monotonic()
         _last_rtt_ms = (t1 - t0) * 1000.0
         return _last_rtt_ms

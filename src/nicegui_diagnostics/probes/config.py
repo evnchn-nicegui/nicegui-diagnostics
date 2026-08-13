@@ -20,7 +20,7 @@ def collect() -> dict[str, Any]:
     on NiceGUI 3.15.  Access ``core.sio.eio`` for transports and
     ``core.sio`` for async_handlers.
     """
-    from nicegui import core  # noqa: PLC0415 — lazy import
+    from nicegui import core
 
     eio = getattr(core.sio, 'eio', None)
 

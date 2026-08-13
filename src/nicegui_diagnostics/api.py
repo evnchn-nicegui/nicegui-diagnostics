@@ -20,6 +20,7 @@ def _make_handler() -> Any:
         verbose = request.query_params.get('verbose', '').lower() in ('true', '1', 'yes')
         client_id = request.query_params.get('client_id')
         delta_mode = request.query_params.get('delta', '').lower() in ('true', '1', 'yes')
+        delta_key = request.query_params.get('delta_key')
 
         if not auth_module.check_auth(
             _auth_fn,
@@ -30,10 +31,31 @@ def _make_handler() -> Any:
         ):
             return JSONResponse({'error': 'unauthorized'}, status_code=401)
 
+        # Determine whether this caller is authenticated.  The same logic as
+        # the check_auth call above: coarse-only requests are always allowed,
+        # anything else needs auth_fn to return True.
+        needs_auth = verbose or client_id is not None or delta_mode
+        authenticated = (not needs_auth) or (_auth_fn is not None and _auth_fn(request))
+
+        # Defence-in-depth: tell the clients probe whether the caller is
+        # authenticated so it can suppress by_id at the source.  The
+        # authenticated flag uses a tri-state (None = don't touch) so that
+        # collect_snapshot's own configure() call does not reset it.
+        from .probes import clients as _clients_probe
+
+        _clients_probe.configure(authenticated=authenticated)
+
         snapshot = collect_snapshot(client_id=client_id, verbose=verbose)
 
+        snapshot = auth_module.sanitize_snapshot(
+            snapshot,
+            authenticated=authenticated,
+            verbose=verbose,
+            client_id=client_id,
+        )
+
         if delta_mode:
-            result = compute_delta(snapshot)
+            result = compute_delta(snapshot, delta_key=delta_key)
         else:
             result = snapshot
 

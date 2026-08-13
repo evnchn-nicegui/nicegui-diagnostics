@@ -5,8 +5,6 @@ They catch the bugs that smoke tests miss (Codex review 2026-08-12).
 """
 from __future__ import annotations
 
-import pytest
-
 
 def setup_function():
     from nicegui_diagnostics import uninstall
@@ -26,7 +24,7 @@ def teardown_function():
 
 def test_install_with_features_returns_probe_data():
     """install(features=[...]) followed by collect_snapshot() should return real probe data, not just timestamp."""
-    from nicegui_diagnostics import install, collect_snapshot
+    from nicegui_diagnostics import collect_snapshot, install
     install(features=["tasks", "memory", "clients", "config"])
     snap = collect_snapshot()
     # At least one probe should have contributed data
@@ -37,7 +35,7 @@ def test_install_with_features_returns_probe_data():
 
 def test_install_with_all_features():
     """install() with no features arg should enable defaults without crashing."""
-    from nicegui_diagnostics import install, collect_snapshot
+    from nicegui_diagnostics import collect_snapshot, install
     install(features=[])  # minimal — just foundation
     snap = collect_snapshot()
     assert "timestamp" in snap
@@ -45,7 +43,7 @@ def test_install_with_all_features():
 
 def test_collect_snapshot_includes_registered_collectors():
     """register_collector() output should appear in collect_snapshot()."""
-    from nicegui_diagnostics import install, collect_snapshot, register_collector
+    from nicegui_diagnostics import collect_snapshot, install, register_collector
     install(features=[])
     register_collector("my_app", lambda: {"widget_count": 42})
     snap = collect_snapshot()
@@ -54,7 +52,7 @@ def test_collect_snapshot_includes_registered_collectors():
 
 def test_stack_dump_port_config():
     """install(stack_dump_port=N) should start stack dump on port N."""
-    from nicegui_diagnostics import install, uninstall
+    from nicegui_diagnostics import install
     # This test verifies the config is at least stored
     # Full wiring test depends on __init__.py fix
     install(features=["stack_dump"], stack_dump_port=0)
@@ -100,6 +98,7 @@ def test_auth_wired_through_install():
 def test_route_registered_on_nicegui_app():
     """install() should add the diagnostics route to nicegui.app.routes."""
     from nicegui import app as nicegui_app
+
     from nicegui_diagnostics import install, uninstall
     uninstall()
     before = len([r for r in nicegui_app.routes if getattr(r, 'path', None) == '/_nicegui/diagnostics'])
@@ -111,7 +110,7 @@ def test_route_registered_on_nicegui_app():
 
 def test_snapshot_shape_not_double_nested():
     """collect_snapshot() should return flat probe keys, not double-nested."""
-    from nicegui_diagnostics import install, uninstall, collect_snapshot
+    from nicegui_diagnostics import collect_snapshot, install, uninstall
     uninstall()
     install(features=["memory", "tasks"])
     snap = collect_snapshot()
@@ -126,7 +125,7 @@ def test_snapshot_shape_not_double_nested():
 
 def test_verbose_returns_client_detail():
     """collect_snapshot(verbose=True) should include per-client detail."""
-    from nicegui_diagnostics import install, uninstall, collect_snapshot
+    from nicegui_diagnostics import collect_snapshot, install, uninstall
     uninstall()
     install(features=["clients"])
     snap = collect_snapshot(verbose=True)

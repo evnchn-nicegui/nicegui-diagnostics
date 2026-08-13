@@ -1,6 +1,8 @@
 from __future__ import annotations
-import urllib.request
+
 import urllib.error
+import urllib.request
+
 import pytest
 
 from nicegui_diagnostics.probes import stack_dump

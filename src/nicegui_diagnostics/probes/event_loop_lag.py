@@ -36,7 +36,7 @@ async def measure() -> float:
 
     Returns the measured lag in milliseconds.
     """
-    global _last_lag_ms  # noqa: PLW0603
+    global _last_lag_ms
 
     loop = asyncio.get_running_loop()
     future: asyncio.Future[float] = loop.create_future()

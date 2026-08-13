@@ -37,13 +37,12 @@ def collect() -> dict[str, Any]:
 
     current_rss_bytes: int | None = None
     current_rss_source = '/proc/self/status not available (non-Linux platform)'
-    with contextlib.suppress(OSError):
-        with open('/proc/self/status', encoding='utf-8') as f:
-            for line in f:
-                if line.startswith('VmRSS:'):
-                    current_rss_bytes = int(line.split()[1]) * 1024
-                    current_rss_source = '/proc/self/status VmRSS'
-                    break
+    with contextlib.suppress(OSError), open('/proc/self/status', encoding='utf-8') as f:
+        for line in f:
+            if line.startswith('VmRSS:'):
+                current_rss_bytes = int(line.split()[1]) * 1024
+                current_rss_source = '/proc/self/status VmRSS'
+                break
 
     return {
         'memory': {
