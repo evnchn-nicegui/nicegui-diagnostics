@@ -115,14 +115,14 @@ def _start_scheduler() -> None:
     """Start the background scheduler task if an event loop is running.
 
     If called outside an event loop (e.g. at module-import time), the
-    scheduler is deferred — ``install()`` was called too early and the
-    loop will start it later when NiceGUI boots.
+    scheduler is deferred to NiceGUI's startup.
     """
     global _scheduler_task
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        _log.debug('No running event loop at install() — scheduler deferred')
+        from nicegui import app
+        app.on_startup(lambda: _installed and _start_scheduler())
         return
 
     if _scheduler_task is not None and not _scheduler_task.done():

@@ -177,3 +177,30 @@ def setup_function():
         uninstall()
     except Exception:
         pass
+
+
+def test_scheduler_starts_on_nicegui_startup_when_installed_before_ui_run():
+    """install() at import time (no loop) must still start the scheduler and emitter once NiceGUI boots."""
+    import asyncio
+
+    from nicegui import app
+
+    import nicegui_diagnostics as nd
+    from nicegui_diagnostics import emitter
+
+    nd.uninstall()
+    handlers = list(app._startup_handlers)
+    nd.install(features=['event_loop_lag'], structlog_interval_s=60)
+    assert nd._scheduler_task is None
+
+    async def boot() -> tuple[bool, bool]:
+        for handler in app._startup_handlers[len(handlers):]:
+            handler()
+        running = nd._scheduler_task is not None and not nd._scheduler_task.done(), emitter._task is not None
+        nd.uninstall()
+        return running
+
+    try:
+        assert asyncio.run(boot()) == (True, True)
+    finally:
+        app._startup_handlers[:] = handlers
