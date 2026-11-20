@@ -122,7 +122,8 @@ def _start_scheduler() -> None:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         from nicegui import app
-        app.on_startup(lambda: _installed and _start_scheduler())
+        if not app.is_started:
+            app.on_startup(lambda: _installed and _start_scheduler())
         return
 
     if _scheduler_task is not None and not _scheduler_task.done():

@@ -65,7 +65,8 @@ def install(*, interval_s: float = 30.0, **kwargs: Any) -> None:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         from nicegui import app
-        app.on_startup(lambda: _interval_s > 0 and _task is None and install(interval_s=_interval_s))
+        if not app.is_started:
+            app.on_startup(lambda: _interval_s > 0 and _task is None and install(interval_s=_interval_s))
         return
     _task = loop.create_task(_emit_loop(), name="nicegui-diagnostics-emitter")
 
